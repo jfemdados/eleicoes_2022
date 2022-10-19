@@ -1,6 +1,6 @@
 #Eleicoes 2022 - Mapa por bairro JF
 #Autores:  Marcello (Count e Faxina de Dados TSE)
-#           Arthur (precisao da GeolocalizaÁ„o das Urnas)
+#           Arthur (precisao da Geolocaliza√ß√£o das Urnas)
 
 
 library(tidyverse)
@@ -10,11 +10,11 @@ library(tidyverse)
 # Importing ---------------------------------------------------------------
 
 
-# 1) DETALHES DA VOTA«√O POR SE«√O -------------------------------
+# 1) DETALHES DA VOTA√á√ÉO POR SE√á√ÉO -------------------------------
 
-# Esse data frame n„o mostra os votos em cada candidato por SeÁ„o.
+# Esse data frame n√£o mostra os votos em cada candidato por Se√ß√£o.
 # Somente os votos totais de cada urna"
-# Ele vai dar a quantidade de vai ter sÛ ter· no final as seguintes colunas no final:
+# Ele vai dar a quantidade de vai ter s√≥ ter√° no final as seguintes colunas no final:
 "    QT_APTOS = col_double()"
 "..  QT_COMPARECIMENTO = col_double(),"
 "..   QT_ABSTENCOES = col_double(),"
@@ -25,7 +25,7 @@ library(tidyverse)
 "..   QT_VOTOS_ANULADOS_APU_SEP = col_double(),"
 "..   NR_LOCAL_VOTACAO= = col_double()"
 
-#NEM RODE para n„o gastar RAM ‡ toa (MEU R CRASHOU)
+#NEM RODE para n√£o gastar RAM √† toa (MEU R CRASHOU)
 det_votacao_secao_2022_mg_raw <- readr::read_delim("tse_dados_abertos/data_raw/detalhe_votacao_secao_2022_MG.csv", 
                                            delim = ";",
                                           escape_double = FALSE,
@@ -40,9 +40,9 @@ det_votacao_secao_2022_jf <- det_votacao_secao_2022_mg_raw %>%
 
 
 
-# 2) DETALHES DA VOTA«√O POR SE«√O -------------------------------
+# 2) DETALHES DA VOTA√á√ÉO POR SE√á√ÉO -------------------------------
 
-#Esse Data Frame parece ter a VotaÁ„o em cada Candidato por Urna
+#Esse Data Frame parece ter a Vota√ß√£o em cada Candidato por Urna
 # 
 
 votacao_secao_2022_mg_raw <- readr::read_delim("tse_dados_abertos/data_raw/votacao_secao_2022_MG.csv", 
@@ -88,8 +88,8 @@ votacao_secao_2022_mg_raw %>%
   count(DS_CARGO)
 
 
-# Porra PQP parece que sÛ tem das estaduais
-# N„o das EleiÁıes Federais
+# Porra PQP parece que s√≥ tem das estaduais
+# N√£o das Elei√ß√µes Federais
 
 
 votacao_secao_2022_jf %>%
@@ -111,13 +111,12 @@ votacao_secao_2022_jf %>%
   group_by(nr_zona) %>%
   count(nr_secao)
 
-#### ABRI OUTRO SCRIPT S” PARA BR (votos Presidenciais)
+#### ABRI OUTRO SCRIPT S√ì PARA BR (votos Presidenciais)
 
 
-# VisualizaÁ„o ------------------------------------------------------------
+# Visualiza√ß√£o ------------------------------------------------------------
 
 votacao_secao_2022_jf %>%
    select( ds_eleicao,
            nm_municipio, nr_zona, nr_secao,
-           ds_cargo, nm_votavel, qt_votos, nr_local_votacao) %>% view()
-
+           ds_cargo, nm_votavel, qt_votos, nr_local_votacao) #%>% view()
