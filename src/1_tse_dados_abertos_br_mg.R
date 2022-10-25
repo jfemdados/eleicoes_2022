@@ -1,20 +1,20 @@
 #Eleicoes 2022 - Mapa por bairro JF
 #Autores:  Marcello (Count e Faxina de Dados TSE)
-#           Arthur (precisao da Geolocalização das Urnas)
+#           Arthur (precisao da Geolocaliza??o das Urnas)
 
 
 library(tidyverse)
 
-#O Objetivo desse Script é comparar o voto Luzema x Lukalil
+#O Objetivo desse Script ? comparar o voto Luzema x Lukalil
 
 # Importing ---------------------------------------------------------------
 
-vot_sec_2022_br_raw_select <- readr::read_delim("tse_dados_abertos/data_raw/votacao_secao_2022_BR.csv", 
+vot_sec_2022_br_raw_select <- readr::read_delim("data/tse/data_raw/votacao_secao_2022_BR.csv", 
                                                delim = ";",
                                                escape_double = FALSE,
                                                trim_ws = TRUE,
                                                locale = locale(encoding = "latin1"),
-                                               #Colunas "inúteis" que peguei em outros scripts
+                                               #Colunas "in?teis" que peguei em outros scripts
                                                col_select = !c("DT_GERACAO",
                                                                "HH_GERACAO",
                                                                "CD_TIPO_ELEICAO",
@@ -25,14 +25,14 @@ vot_sec_2022_br_raw_select <- readr::read_delim("tse_dados_abertos/data_raw/vota
                                                                "SQ_CANDIDATO"
                                                                )
                                                )
-#Cuidado que esse arquivo é grande, coloquei um n_max pra isso.
+#Cuidado que esse arquivo ? grande, coloquei um n_max pra isso.
 
 vot_sec_2022_mg_raw_select <- readr::read_delim("tse_dados_abertos/data_raw/votacao_secao_2022_MG.csv", 
                                                delim = ";",
                                                escape_double = FALSE,
                                                trim_ws = TRUE,
                                                locale = locale(encoding = "latin1"),
-                                               #Colunas "inúteis" que peguei antes
+                                               #Colunas "in?teis" que peguei antes
                                                col_select = !c("DT_GERACAO",
                                                                "HH_GERACAO",
                                                                "CD_TIPO_ELEICAO",
@@ -57,7 +57,7 @@ vot_sec_2022_mg_governador <- vot_sec_2022_mg_raw_select %>%
   janitor::clean_names()
 
 saveRDS(vot_sec_2022_mg_governador,
-        file= "tse_dados_abertos/data_tratada/vot_sec_2022_mg_governador.rds")
+        file= "tse_dados_abertos/data_tratada/vot_sec_2022_mg_governador.RDS")
 
 
 vot_sec_2022_br_presidente_mg <- vot_sec_2022_br_raw_select %>%
@@ -65,7 +65,7 @@ vot_sec_2022_br_presidente_mg <- vot_sec_2022_br_raw_select %>%
   janitor::clean_names()
 
 saveRDS(vot_sec_2022_br_presidente_mg,
-        file= "tse_dados_abertos/data_tratada/vot_sec_2022_br_presidente_mg.rds")
+        file= "tse_dados_abertos/data_tratada/vot_sec_2022_br_presidente_mg.RDS")
 
 
 remove(vot_sec_2022_br_raw_select)
@@ -95,8 +95,8 @@ mapas_minas_cor <-mapas_minas %>%
 inner_join(municip_tse, mapas_minas_cor, by= "nm_municipio")
 anti_join(municip_tse, mapas_minas_cor, by= "nm_municipio")
 
-#Dá pra fazer dá? Mas e Cod_muni_ibge =/= cod_muni_tse
-# Esumarizar aquela quantidade de seções tem uma probabilidade alta de dar um erro.
-# Na base Resultados por Município, que tem na Base dos Dados parece tem sumarizado 
-#e já deve ter tratado
+#D? pra fazer d?? Mas e Cod_muni_ibge =/= cod_muni_tse
+# Esumarizar aquela quantidade de se??es tem uma probabilidade alta de dar um erro.
+# Na base Resultados por Munic?pio, que tem na Base dos Dados parece tem sumarizado 
+#e j? deve ter tratado
 # 

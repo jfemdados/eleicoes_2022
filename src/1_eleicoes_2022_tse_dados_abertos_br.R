@@ -13,7 +13,7 @@ library(tidyverse)
 # Esse DF está disponiível para download no site oficial do TSE
 # Escolha "BR - Votação por seção eleitoral - 2022" dentro de https://dadosabertos.tse.jus.br/dataset/resultados-2022"
 
-votacao_secao_2022_br_raw <- readr::read_delim("tse_dados_abertos/data_raw/votacao_secao_2022_BR.csv", 
+votacao_secao_2022_br_raw <- readr::read_delim("data/tse/data_raw/votacao_secao_2022_BR.csv", 
                                                    delim = ";",
                                                    escape_double = FALSE,
                                                    trim_ws = TRUE,
@@ -103,6 +103,12 @@ votacao_secao_2022_jf_presid_wide <- votacao_secao_2022_jf_presid %>%
                   voto_branco,
                   voto_nulo)
 
+
+df_votos_2022_presid_tally <- votacao_secao_2022_jf_presid %>%
+  filter(ds_cargo == "PRESIDENTE") %>% 
+  dplyr::group_by(nr_zona, nr_secao, nm_votavel) %>%
+  dplyr::tally(qt_votos, sort = TRUE) %>%
+  mutate(votos_prop = proportions(n))
 
 
 

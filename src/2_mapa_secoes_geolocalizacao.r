@@ -8,7 +8,7 @@ library(tidyverse)
 library(basedosdados)
 
 # Importando da base dos Dados
-basedosdados::set_billing_id("tse22-364418")
+basedosdados::set_billing_id("placeholder") #muda dependendo do usuário
 
 
 tse_jf_completa <- basedosdados::read_sql( "SELECT zona, secao, melhor_urbano, melhor_rural, tse_recente, tse_distribuido, escolas_inep, 
@@ -75,7 +75,11 @@ shp_tse_google <- shp_tse_google %>%
 
 ## agora é partir pro abraço:
 shp_tse_urnas <- shp_tse_urbano %>% 
-  rbind(shp_tse_google)
+  rbind(shp_tse_google) %>% 
+  mutate(
+    zona = as.numeric(zona),
+    secao = as.numeric(secao)
+  )
 
 ## Verificar se deu certo via tmap:
 tm_shape(shp_tse_urnas) +
