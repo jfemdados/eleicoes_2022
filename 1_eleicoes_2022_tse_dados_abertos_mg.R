@@ -10,7 +10,7 @@ library(tidyverse)
 # Importing ---------------------------------------------------------------
 
 
-# 1) DETALHES DA VOTAÇÃO POR SEÇÃO -------------------------------
+# 1) DETALHES da Votação por Seção -------------------------------
 
 # Esse data frame não mostra os votos em cada candidato por Seção.
 # Somente os votos totais de cada urna"
@@ -26,35 +26,36 @@ library(tidyverse)
 "..   NR_LOCAL_VOTACAO= = col_double()"
 
 #NEM RODE para não gastar RAM à toa (MEU R CRASHOU)
-det_votacao_secao_2022_mg_raw <- readr::read_delim("tse_dados_abertos/data_raw/detalhe_votacao_secao_2022_MG.csv", 
-                                           delim = ";",
-                                          escape_double = FALSE,
-                                          trim_ws = TRUE,
-                                            locale = locale(encoding = "latin1")
-                                            )
+#det_votacao_secao_2022_mg_raw <- readr::read_delim("tse_dados_abertos/data_raw/detalhe_votacao_secao_2022_MG.csv", 
+  #                                     delim = ";",
+  #                                    escape_double = FALSE,
+  #                                    trim_ws = TRUE,
+  #                                      locale = locale(encoding = "latin1")
+  #                                      )
+#
+
+#det_votacao_secao_2022_jf <- det_votacao_secao_2022_mg_raw %>%
+##                           janitor::clean_names() %>%
+#                         filter(str_detect( nm_municipio, "JUIZ DE FORA"))
 
 
-det_votacao_secao_2022_jf <- det_votacao_secao_2022_mg_raw %>%
-                            janitor::clean_names() %>%
-                          filter(str_detect( nm_municipio, "JUIZ DE FORA"))
 
-
-
-# 2) DETALHES DA VOTAÇÃO POR SEÇÃO -------------------------------
+# 2) VOTAÇÃO POR SEÇÃO -----------------------------------
 
 #Esse Data Frame parece ter a Votação em cada Candidato por Urna
-# 
+
+#Cuidado que esse arquivo é grande, coloquei um n_max pra isso.
 
 votacao_secao_2022_mg_raw <- readr::read_delim("tse_dados_abertos/data_raw/votacao_secao_2022_MG.csv", 
                                             delim = ";",
                                             escape_double = FALSE,
                                             trim_ws = TRUE,
                                             locale = locale(encoding = "latin1")
+                                            #,n_max = 100000
                                         )
 
 
-vot_limit_100<- votacao_secao_2022_mg_raw %>%
-  slice(1:100)
+
 
 # Filtrando pra JF
 
@@ -85,7 +86,7 @@ votacao_secao_2022_jf %>%
 
 
 votacao_secao_2022_mg_raw %>%
-  count(DS_CARGO)
+  count(TP_ABRANGENCIA)
 
 
 # Porra PQP parece que só tem das estaduais
@@ -120,3 +121,4 @@ votacao_secao_2022_jf %>%
    select( ds_eleicao,
            nm_municipio, nr_zona, nr_secao,
            ds_cargo, nm_votavel, qt_votos, nr_local_votacao) #%>% view()
+
