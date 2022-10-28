@@ -1,5 +1,6 @@
 #Eleicoes 2022 - Mapa por bairro JF
-#Autores:  Marcello e Arthur
+#Autores:  Marcello (Count e Faxina de Dados TSE)
+#           Arthur (precisao da Geolocalização das Urnas)
 
 library(tidyverse)
 library(basedosdados)
@@ -33,10 +34,17 @@ mg_candidatos_query <- basedosdados::bdplyr("br_tse_eleicoes.candidatos") %>%
 
 mg_candidatos_data <- basedosdados::bd_collect(mg_candidatos_query)
 
+# 
+
+mg_detalhes_exec_query <- basedosdados::bdplyr("br_tse_eleicoes.resultados_candidato_municipio") %>%
+  dplyr::filter(ano == 2022 & sigla_uf == "MG"
+                & str_detect(cargo,"presidente|governador")
+  )
 
 
 
-# Pós BD- Joining e Tidying -----------------------------------------------
+
+# Pós BD- Joining ----------------------------------------------------------
 
 
 mg_result_nome_join<- inner_join(mg_result_exec_data,
@@ -54,12 +62,28 @@ mg_result_nome_join %>%
 # Group By com summarize  =( deu errado
 
 mg_result_nome_join %>%
-  group_by(id_municipio, cargo, nome_urna) %>%
-    summarize(max(votos))
+  filter(cargo== "presidente") %>%
+      group_by(id_municipio,
+               #cargo,
+               ) %>%
+        summarize(mais_votado = max(votos))
+
+
+mg_result_nome_join %>%
+  filter(cargo== "presidente") %>%
+  group_by(id_municipio,
+           #cargo,
+  ) %>%
+  summarize(mais_votado = max(votos))
 
 # ERRO: pq quando você agrupa por tudo ele summariza nada kkk
 
-#Colocando pra Wide
+
+
+
+# Pós BD - Tidying --------------------------------------------------------
+
+# Ideia é fazer um pivot_wider, pré tidying pros mapas
 
 # Tive Que fazer dois DFs pq o join estava dando erro
 
@@ -105,23 +129,30 @@ mg_result_gov_wide<- mg_result_nome_join %>%
   dplyr::relocate(.after = cargo, mais_votado, zema, kalil)
 
 
-mg_result_exec_wide<- mg_result_nome_join %>%
-  filter(cargo== "governador") %>%
-  #tive que tirar todos as colunas que remetiam à identificação do candidato
-  #pq o pivot wider estava dando erro
-  select(!c(numero_partido, sigla_partido,  numero_partido,
-            numero_candidato, sequencial_candidato, id_candidato_bd,
-            sequencial, resultado)
-  ) %>%
-  # Pivotando para juntar com o mapa do {geobr}
-  pivot_wider(names_from = nome_urna,
-              values_from = votos)  %>%
-  janitor::clean_names()# %>%
-  # Jeito Feio de Fazer conta kkk
-  mutate(mais_votado= if_else(zema > kalil,
-                              true = "Zema",
-                              false = "Kalil")) %>%
-  dplyr::relocate(.after = cargo, mais_votado, zema, kalil)
+
+# Tentando fazer os dois juntos
+
+#No Meu Jeito de fazer Pivot
+ # Estou pivotando por nome do candidato na urna,
+
+
+#mg_result_exec_wide<- mg_result_nome_join %>%
+#  #filter(cargo== "governador") %>%
+#  #tive que tirar todos as colunas que remetiam à identificação do candidato
+#  #pq o pivot wider estava dando erro
+#  select(!c(numero_partido, sigla_partido,  numero_partido,
+#            numero_candidato, sequencial_candidato, id_candidato_bd,
+#            sequencial, resultado)
+#  ) %>%
+#  # Pivotando para juntar com o mapa do {geobr}
+#  pivot_wider(names_from = nome_urna,
+#              values_from = votos)  %>%
+#  janitor::clean_names()# %>%
+#  # Jeito Feio de Fazer conta kkk
+#  mutate(mais_votado= if_else(zema > kalil,
+#                              true = "Zema",
+#                              false = "Kalil")) %>%
+#  dplyr::relocate(.after = cargo, mais_votado, zema, kalil)
 
 
 
@@ -137,21 +168,13 @@ library(sf)
 
 tmap_mode("view")
 
+#Shape File PAI DE TODOS dos Municípios
 
 mapa_munic_mg <- geobr::read_municipality(code_muni = "MG")
 
-base_ibge_raw <- read_rds("mapas/base_ibge.rds")
 
 
-# Juntando Mapas
-
-base_ibge <- base_ibge_raw %>%
-  select(Cod_setor, Cod_meso:Nome_do_bairro) %>%
-  filter(Nome_do_municipio == "JUIZ DE FORA") %>%
-  rename(code_tract = Cod_setor)
-
-# Presidente mais votado
-
+# Presidente mais votado --------------------------------------------------
 
 # Join Shape File e Dados
 
@@ -179,7 +202,10 @@ ggplot() +
        )
   
 
-# Governador mais votado
+
+# Governador mais votado --------------------------------------------------
+
+
 
 
 
@@ -189,8 +215,6 @@ mapa_vot_gov <-  full_join( x = mapa_munic_mg %>%
                                  select(mais_votado, zema, kalil,
                                         id_municipio)
                                ,by =  "id_municipio")
-
-
 
 
 ### ggplot
@@ -206,7 +230,10 @@ mapa_vot_gov %>%
        caption = "DEU CERTO FILHA DA PUTA")
 
 
-# Juntando os dois Mapas
+
+# Juntnado Dois Mais Votados em MG ----------------------------------------
+
+
 # Não repara que o codigo é na correria
 
 mg_result_exec_mais_vot<- full_join( mg_result_pres_wide %>%
@@ -239,7 +266,7 @@ mapa_vot_gov %>%
   theme_void() +
   scale_fill_manual( name= "Candidato",
                      #label= c("Menos de 20%", "20% a 40%"),
-                     values= c("dodgerblue3","red2", "brown1")
+                     values= c("#003A88","red2", "brown1")
                      ) +
   labs(title = "Eleições 2022: Pres. e Gov. mais Votados",
         subtitle = "Votos por Município em MG")
@@ -247,4 +274,96 @@ mapa_vot_gov %>%
 
 
 as_tibble(mapa_vot_gov)%>%
+  count(dois_mais, sort = TRUE)
+
+
+
+# Mapa Por Regiões - Cruzando com Regiões do IBGE -------------------------
+
+
+base_ibge_raw <- read_rds("mapas/base_ibge.rds")
+
+# Base de Setores Censitários de JF
+
+base_ibge_jf <- base_ibge_raw %>%
+      select(Cod_setor, Cod_meso:Nome_do_bairro) %>%
+      filter(Nome_do_municipio == "JUIZ DE FORA") %>%
+      rename(code_tract = Cod_setor) %>%
+       janitor::clean_names()
+
+
+
+# Base de Municípios de MG (agrupando setores Censitários)
+base_ibge_mg <-  base_ibge_raw %>%
+        select(Cod_setor:Nome_do_bairro) %>%
+        filter(Nome_da_UF== "Minas Gerais") %>%
+        janitor::clean_names() %>%
+        #Selecionando as Colunas que eu Quero Manter
+        group_by( nome_da_meso, cod_meso, nome_da_micro, cod_micro,
+                 nome_da_rm, cod_rm, cod_municipio) %>%
+         #Agrupando por Município
+        count(nome_do_municipio) %>% 
+        rename("code_muni"= cod_municipio) %>%
+        mutate(code_muni= as.numeric(code_muni)) %>%
+        ungroup()
+
+base_ibge_mg %>% 
+  group_by( nome_da_rm ) %>%
+    count(nome_da_meso)
+        
+#Fazendo Polígonos pelo Geobr
+
+library(ggplot2)
+library(geobr)
+
+
+mapa_regioes_mg <- mapa_munic_mg %>%
+        inner_join(base_ibge_mg, by= "code_muni")# %>% sf::st_simplify(dTolerance = 0.)
+
+mapa_regioes_mg %>%
+  #filter(nome_da_meso== "Zona da Mata") %>%
+  ggplot() + geom_sf(aes( fill= nome_da_meso ),
+                      size= .15, show.legend = TRUE) 
+
+
+# Mapa de Votos  pela Zona da Mata ------------------------------
+
+
+mapa_vot_gov_zm <-  left_join( x = mapa_regioes_mg %>%
+                                 filter(nome_da_meso== "Zona da Mata") %>%
+                              mutate(id_municipio= as.character(code_muni)),
+                            y = mg_result_exec_mais_vot
+                            ,by =  "id_municipio")
+
+
+
+
+mapa_vot_gov_zm %>%
+  ggplot() + geom_sf(aes( fill= dois_mais),
+                     colour= "gray20", size= .15,  show.legend = TRUE) +
+  theme_void() +
+  scale_fill_manual( name= "Candidatos mais Votados",
+                     #label= c("Menos de 20%", "20% a 40%"),
+                     values= c("#003A88","red2", "brown1")
+                    ) #+
+  #labs(title = "Eleições 2022: Presidentes e Gov mais Votados",
+   #    subtitle = paste("Mais Votados por Município na Zona da Mata"))
+
+#scale_fill_brewer()
+#scale_fill_manual( name= "Proporção Vacinas:\nAplicadas/Disponibilizadas",
+#                   label= c("Menos de 20%", "20% a 40%","40% a 60%","60% a 80%","80% a 100%", "Acima de 100%\nErros nos Dados"),
+#                   values= c("red2","red4", "yellow", "limegreen", "green4", "gray30"))
+#labs(title = "Eficiência na Vacinação: Os Municípios estão Aplicando as Vacinas que Recebem?", 
+#     subtitle= "Nº de Vacinas enviadas aos Municípios dividido Pelas nº de Vacinas Aplicadas")
+
+
+
+as_tibble(mapa_vot_gov_zm) %>%
+  filter(dois_mais == "Lula e Zema") %>%
+  select(nome_do_municipio, dois_mais,
+         lula, jair_bolsonaro, zema, kalil) %>%
+  arrange(desc(lula))
+
+
+as_tibble(mapa_vot_gov_zm) %>%
   count(dois_mais, sort = TRUE)
