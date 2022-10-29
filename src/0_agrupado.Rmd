@@ -1,0 +1,380 @@
+---
+title: "Eleições 2022 - Mapa por bairros de JF"
+author: "Marcello Filgueiras e Arthur Bazolli"
+date: "2022-10-28"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+Código para cruzar as informações do TSE com o `shapefile` dos bairros.
+
+
+# Setup
+
+Setup: configurar parâmetros do `RMarkdown` e carregar os pacotes
+
+```{r backstage-1, include=FALSE, eval=TRUE}
+# Código invisível para costurar o Rmd
+rmarkdown::render("src/0_agrupado.Rmd", output_format = "html", output_file = "output/Script passo a passo.html")
+```
+
+```{r setup, warning=FALSE, results='hide', eval=TRUE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  #eval = FALSE,
+  warning=FALSE,
+  dev = "svg", # para boniteza dos gráficos
+  fig.retina = 3 # idem
+  )
+
+
+library(tidyverse) 
+library(here) # para usar diretórios relativos
+library(sf) # dados espaciais na forma simple feature
+
+library(basedosdados)
+library(geobr)
+
+library(tmap) # alternativa ao ggplot boa para mapas dinâmicos
+tmap_mode("view") # para que o mapa seja dinâmico
+```
+
+
+
+# Dados do TSE
+
+Esse `dataset` está disponiível para download no site oficial do TSE. Escolha "BR - Votação por seção eleitoral - 2022" dentro de https://dadosabertos.tse.jus.br/dataset/resultados-2022
+
+## Importando
+
+```{r importing-tse}
+df_raw_presidente <- readr::read_delim("data/tse/data_raw/votacao_secao_2022_BR.csv", 
+                                               delim = ";",
+                                               escape_double = FALSE,
+                                               trim_ws = TRUE,
+                                               locale = locale(encoding = "latin1")
+                                               #,col_select = !c("DT_GERACAO","HH_GERACAO","TP_ABRANGENCIA",
+                                               #                   )
+)
+
+df_presidente <- df_raw_presidente %>%
+  janitor::clean_names() %>%
+  filter(str_detect(nm_municipio, "JUIZ DE FORA")) 
+
+```
+
+Para selecionar apenas votos válidos: fazer filtro.
+```{r valid-tse}
+df_presidente_valid <- df_presidente %>%
+  filter(nm_votavel != "VOTO BRANCO" & nm_votavel != "VOTO NULO") 
+```
+
+
+
+## Limpando
+
+Aqui, disponibilizamos o dataset em três formas diferentes: long, wide e tally. A primeira é a original, em que cada linha representa um candidato em cada seção eleitoral da cidade. A segunda é a forma larga (wide), em que transformamos a original para que cada coluna seja um candidato e as linhas correspondam às seções ---essa é a forma *tidy*, recomendada pela equipe do Hadley Wickham (criador do Tidyverse). Por fim, a terceira é uma contagem de votos que cada candidato teve por seção, incluindo percentuais (que somam 100% por seção).
+
+```{r tidying-tse}
+df_presidente_wide <- df_presidente %>%
+  # selecionando colunas que eu quero pra diminuir info
+  dplyr::select(ano_eleicao, dt_eleicao, nm_tipo_eleicao, nr_turno, ds_eleicao,
+                sg_uf, cd_municipio, nm_municipio, nr_zona, nr_secao , nr_local_votacao,
+                #nr_votavel, sq_candidato, #info dos candidatos comprometem pivot
+                ds_cargo, nm_votavel, qt_votos ) %>%
+  #Pivotando para que 1 linha = 1 seção
+  tidyr::pivot_wider(names_from = nm_votavel,
+                     values_from = qt_votos) %>%
+  janitor::clean_names() %>%
+  #botar os maiores na frente
+  dplyr::relocate(.after = ds_cargo,
+                  luiz_inacio_lula_da_silva,
+                  jair_messias_bolsonaro,
+                  simone_nassar_tebet,
+                  ciro_ferreira_gomes,
+                  voto_branco,
+                  voto_nulo)
+
+df_presidente_valid_wide <- df_presidente_valid %>%
+  # selecionando colunas que eu quero pra diminuir info
+  dplyr::select(ano_eleicao, dt_eleicao, nm_tipo_eleicao, nr_turno, ds_eleicao,
+                sg_uf, cd_municipio, nm_municipio, nr_zona, nr_secao , nr_local_votacao,
+                #nr_votavel, sq_candidato, #info dos candidatos comprometem pivot
+                ds_cargo, nm_votavel, qt_votos ) %>%
+  #Pivotando para que 1 linha = 1 seção
+  tidyr::pivot_wider(names_from = nm_votavel,
+                     values_from = qt_votos) %>%
+  janitor::clean_names() %>%
+  #botar os maiores na frente
+  dplyr::relocate(.after = ds_cargo,
+                  luiz_inacio_lula_da_silva,
+                  jair_messias_bolsonaro,
+                  simone_nassar_tebet,
+                  ciro_ferreira_gomes)
+
+df_presidente_valid_tally <- df_presidente_valid %>%
+  filter(ds_cargo == "PRESIDENTE") %>% 
+  dplyr::group_by(nr_zona, nr_secao, nm_votavel) %>%
+  dplyr::tally(qt_votos, sort = TRUE) %>% 
+  dplyr::mutate(n_prop = n/sum(n))
+```
+
+
+## Exportando
+
+Para não ter que repetir a operação cada vez, podemos salvar os dataframes para usar depois. A desvantagem é que ocupa espaço no PC. É interessante quando temos que repetir um código muitas vezes mas, para reprodução e compartilhamento no GitHub, não se deve subir os dados originais, mas sim o código para reproduzi-los.
+
+```{r export-tse}
+saveRDS(df_presidente, "data/tse/df_presidente.RDS")
+saveRDS(df_presidente_wide, "data/tse/df_presidente_wide.RDS")
+saveRDS(df_presidente_tally, "data/tse/df_presidente_tally.RDS")
+
+saveRDS(df_presidente_valid, "data/tse/df_presidente_valid.RDS")
+saveRDS(df_presidente_valid_wide, "data/tse/df_presidente_valid_wide.RDS")
+saveRDS(df_presidente_valid_tally, "data/tse/df_presidente_valid_tally.RDS")
+```
+
+
+
+# Seções geolocalizadas
+
+Informações puxadas da Base dos Dados.
+
+## Importando
+
+A query completa não é utilizada, está aí para referência (por isso marcada com #)
+```{r importing-secoes}
+basedosdados::set_billing_id("tse22-364418") #muda dependendo do usuário
+
+# df_tse_secoes_completa <- basedosdados::read_sql( "SELECT zona, secao, melhor_urbano, melhor_rural, tse_recente, tse_distribuido, escolas_inep, 
+#                         escolas_municipais, ibge_cnefe_endereco, ibge_cnefe_local, google, google_relaxado, google_centro_geometrico,
+#                         ibge_povoados, ano
+#                         FROM `basedosdados.br_tse_eleicoes.local_secao` 
+#                         WHERE id_municipio = 3136702 AND ano = 2020
+#                         ")
+
+df_tse_secoes <- basedosdados::read_sql( "SELECT zona, secao, melhor_urbano, google_relaxado
+                        FROM `basedosdados.br_tse_eleicoes.local_secao` 
+                        WHERE id_municipio = 3136702 AND ano = 2020
+                        ")
+```
+
+
+## Limpando
+
+Para algumas seções, a localização vem da coluna `melhor_urbano`, para outras, de `google_relaxado`. Por isso, precisamos juntá-las... Mas como as geometrias são diferentes, temos que converter pra simple feature (`sf`) **antes** de dar join.
+
+```{r separating-secoes}
+shp_tse_urbano <- df_tse_secoes %>% 
+  filter(!is.na(melhor_urbano)) %>% 
+  st_as_sf(
+    wkt = "melhor_urbano"
+  ) %>% 
+  rename(geometry = melhor_urbano) %>% 
+  select(-google_relaxado)
+
+# conferindo: 
+class(shp_tse_urbano)
+
+shp_tse_google <- df_tse_secoes %>% 
+  # para garantir que só pegamos de fato seções que não tínhamos informação, inserimos também is.na(melhor_urbano)
+  filter(is.na(melhor_urbano) & !is.na(google_relaxado)) %>% 
+  st_as_sf(
+    wkt = "google_relaxado"
+  ) %>% 
+  rename(geometry = google_relaxado) %>% 
+  select(-melhor_urbano)
+```
+
+
+Opcional: mapeando para explorar a diferença
+```{r mapa-check}
+tm_shape(shp_tse_urbano) +
+  tm_dots(col = "blue") +
+  tm_shape(shp_tse_google) +
+  tm_dots(col = "red")
+```
+
+
+## Agregando
+
+Ao tentarmos agregar os dados, podemos ver que a coluna da geometria é ligeiramente diferente: os dados do google_relaxado têm uma casa decimal a mais. Por isso, devemos conferir se o `crs` (Coordinate Reference System) é o mesmo:
+```{r crs-check}
+st_crs(shp_tse_urbano)
+st_crs(shp_tse_google)
+```
+
+Plot twist: não tem CRS! Mas visivelmente, os dados estão no CRS do tipo WGS 84 (epsg = 4326), o padrão do google maps e do GPS. Após atribuirmos ao mapa o `crs` que está em uso, convertemos para o padrão brasileiro, o SIRGAS 2000 (epsg = 4674), utilizado nos outros mapas como os do `geobr`.
+```{r crs-set}
+shp_tse_urbano <- shp_tse_urbano %>% 
+  st_set_crs(4326) %>% 
+  st_transform(crs = 4674)
+
+shp_tse_google <- shp_tse_google %>% 
+  st_set_crs(4326) %>% 
+  st_transform(crs = 4674)
+
+#check: st_crs(shp_tse_urbano) == st_crs(shp_tse_google)
+```
+
+Agora é partir pro abraço:
+```{r aggregating-secoes}
+shp_tse_secoes <- shp_tse_urbano %>% 
+  rbind(shp_tse_google) %>% 
+  mutate(
+    zona = as.numeric(zona),
+    secao = as.numeric(secao)
+  )
+
+## Verificar se deu certo via tmap:
+# tm_shape(shp_tse_secoes) +
+#   tm_dots(col = "red")
+
+## limpando
+remove(tse_jf_select, shp_tse_google, shp_tse_urbano)
+```
+
+
+## Exportando
+
+E, finalmente, exportar, com as mesmas ressalva de antes:
+```{r export-secoes}
+saveRDS(shp_tse_secoes, "data/shp_tse_secoes.RDS")
+```
+
+
+
+# Mapas base
+
+Do pacote `geobr`, podemos puxar o mapa da cidade, dos setores censitários, e também do estado, regiões etc.
+
+## Mapa de Juiz de Fora
+```{r shp-jf, eval=TRUE}
+shp_jf <- geobr::read_municipality(code_muni = 3136702)
+```
+
+## Mapa de bairros da prefeitura
+```{r shp-bairros, eval=TRUE}
+shp_bairros_pjf <- sf::read_sf("data/shp_bairros_pjf.gpkg")
+```
+
+### Visualizando o mapa de bairros
+
+`ggplot`:
+```{r ggplot-bairros, eval=TRUE}
+shp_bairros_pjf %>% 
+  ggplot() +
+  geom_sf(aes(fill = rend_pc)) +
+  scale_fill_viridis_b() +
+  labs(title = "Bairros de Juiz de Fora",
+       caption = "Fonte: PJF",
+       fill = "Renda per capita \n(em salários mínimos)") +
+  theme_void()
+```
+
+`tmap`:
+```{r tmap-bairros}
+shp_bairros_pjf %>% 
+  tm_shape() +
+  tm_fill(col = "rend_pc", palette = "viridis", alpha = 0.75, title = "Renda per capital (em S.M.)") +
+  tm_borders(col = "black")
+```
+
+Visualizando seções e bairros juntos:
+```{r}
+shp_bairros_pjf %>% 
+  tm_shape() +
+  tm_fill(col = "rend_pc", palette = "viridis", alpha = 0.75, title = "Renda per capita (em S.M.)") +
+  tm_borders(col = "black") +
+  tm_shape(shp_tse_secoes) +
+  tm_dots(col = "red")
+```
+
+Podemos ver que nove colégios eleitorais não estão em bairros ---são as zonas rurais--- e, por isso, sairão da base.
+
+
+
+# Juntando tudo
+
+Agora, juntamos as informações de votação por seção com as coordenadas de cada seção. 
+
+Opcional: carregar os dados, se tiverem sido salvos.
+```{r readRDS, eval=TRUE}
+shp_tse_secoes <- here("data/shp_tse_secoes.RDS") %>% readRDS()
+
+# Obs.: usaremos apenas os votos válidos. caso contrário, só dar ctrl shift c nas linhas abaixo e trocar onde está o comentário.
+# df_presidente <- here("data/tse/df_presidente.RDS") %>% readRDS()
+# df_presidente_wide <- here("data/tse/df_presidente_wide.RDS") %>% readRDS()
+# df_presidente_tally <- here("data/tse/df_presidente_tally.RDS") %>% readRDS()
+
+df_presidente_valid <- here("data/tse/df_presidente_valid.RDS") %>% readRDS()
+df_presidente_valid_wide <- here("data/tse/df_presidente_valid_wide.RDS") %>% readRDS()
+df_presidente_valid_tally <- here("data/tse/df_presidente_valid_tally.RDS") %>% readRDS()
+```
+
+
+## Join normal: votos + seções
+
+O primeiro passo é juntar o `dataframe` de votos com o `sf` de seções geolocalizadas.
+```{r regular-join, eval=TRUE}
+shp_presidente_valid_tally <- df_presidente_valid_tally %>% 
+  rename(zona = nr_zona,
+         secao = nr_secao) %>% 
+  right_join(shp_tse_secoes) %>% 
+  st_as_sf()
+```
+
+
+## Spatial join: tse + bairros
+
+### Verificação inicial
+
+Agora, temos dois `sf` para trabalhar: os votos geolocalizados e o shapefile dos bairros. Assim, para agregarmos os votos por bairro, o primeiro passo é atribuir ao dataframe de votos a informação de qual bairro aquela seção está localizada. 
+
+Fazemos isso por meio de operações topológicas do pacote `sf`. Existem diferentes tipos de operações, como a `st_covered_by`: ela verifica se uma geometria (no caso, um `POINT`) [está contida em outra]e coberta por outra (um `POLYGON`). Usamos essa para verificar em que bairros (polígonos) as seções (pontos) estão. 
+
+No entanto, pode haver problemas se uma seção estiver **exatamente** no limite entre dois polígonos, nem um milímetro a mais dentro de outro. Parece trivial, mas ocorre com alguma frequência: por exemplo, se o limite de bairros é uma avenida. Assim, é bom ver se isso está acontecendo fazendo a operação com o shapefile de seções antes de fazê-lo com o de votos:
+```{r secoes-operation, eval=TRUE}
+shp_secoes_bairros <- shp_tse_secoes %>% 
+  st_join(shp_bairros_pjf, join = st_covered_by)
+
+shp_secoes_bairros %>% 
+  filter(is.na(code_neighborhood))
+```
+
+Após o join espacial, 34 seções ficaram repletas de NA para os dados provenientes do shapefile de bairros. Podemos averiguar onde elas estão destacando, em cima do mapa anterior, quais colégios eleitorais foram perdidos.
+```{r lost-sections}
+shp_bairros_pjf %>% 
+  tm_shape() +
+  tm_fill(col = "rend_pc", palette = "viridis", alpha = 0.75, title = "Renda per capita") +
+  tm_borders(col = "black") +
+  #tm_shape(shp_tse_secoes) +
+  #tm_dots(col = "red") +
+  tm_shape(shp_secoes_bairros %>% filter(is.na(code_neighborhood))) +
+  tm_dots(col = "blue")
+```
+
+São exatamente os nove colégios eleitorais rurais. Assim, podemos prosseguir com essa operação normalmente ---não sem antes limpar o dataframe intermediário que criamos, para não poluir o código (e aliviar o uso de memória do R): `r remove(shp_secoes_bairros)`.
+
+### Join
+
+Nota: `st_covered_by` é o inverso da operação que usamos aqui, `st_covers`: vai depender de quem é o $x$ e quem é o $y$ do join. No caso, como passamos primeiro o shapefile de bairros (para selecionar só algumas colunas), usamos a forma direta, *x covers y*, em vez da inversa.
+```{r}
+shp_presidente_valid_tally_bairros <- shp_bairros_pjf %>% 
+  select(name_neighborhood, pop_20, rend_pc, prop_fam_perfil_cad) %>% 
+  st_join(shp_presidente_valid_tally, join = st_covers) %>% 
+  relocate(geom, .after = n_prop)
+```
+
+# Visualizando as eleições
+
+
+
+
+
+
+
+
