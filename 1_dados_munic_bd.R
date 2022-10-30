@@ -34,12 +34,15 @@ mg_candidatos_query <- basedosdados::bdplyr("br_tse_eleicoes.candidatos") %>%
 
 mg_candidatos_data <- basedosdados::bd_collect(mg_candidatos_query)
 
-# 
+# Detalhes dos Candidatos - Nomes
 
-mg_detalhes_exec_query <- basedosdados::bdplyr("br_tse_eleicoes.resultados_candidato_municipio") %>%
-  dplyr::filter(ano == 2022 & sigla_uf == "MG"
-                & str_detect(cargo,"presidente|governador")
-  )
+mg_detalhes_pres_query <- basedosdados::bdplyr("br_tse_eleicoes.detalhes_votacao_municipio") %>%
+  dplyr::filter(ano == 2022 & sigla_uf == "MG" &  turno == 1
+                & str_detect(cargo,"presidente")
+                ) 
+
+
+mg_detalhes_pres_data <- basedosdados::bd_collect(mg_detalhes_pres_query) 
 
 
 
@@ -48,33 +51,61 @@ mg_detalhes_exec_query <- basedosdados::bdplyr("br_tse_eleicoes.resultados_candi
 
 
 mg_result_nome_join<- inner_join(mg_result_exec_data,
-                                mg_candidatos_data 
-                                #, by = "id_candidato_bd" #tirei pq peguei colunas a mais
-                                # e assim o Rn deixar o R juntar colunas iguais
-                                # n houve prejuízos com inner_join
+                                mg_candidatos_data %>%
+                                  rename( "sequencial_candidato" = "sequencial")
+                                #,
+                              #  by = c("ano", "tipo_eleicao", "cargo", "id_candidato_bd"
+                               #        , "sequencial_candidato") 
                                 )
+
+
 
 # Número de Município bate
 mg_result_nome_join %>% 
   filter(nome_urna == "Jair Bolsonaro") %>%
     count(nome_urna)
 
+
+#Dúvidas com summarize ---------------------
 # Group By com summarize  =( deu errado
 
 mg_result_nome_join %>%
   filter(cargo== "presidente") %>%
       group_by(id_municipio,
-               #cargo,
+               nome_urna,
+              # cargo,
                ) %>%
-        summarize(mais_votado = max(votos))
+        summarize(mais_votado = max(votos),
+                  .groups = "drop_last")
 
 
 mg_result_nome_join %>%
   filter(cargo== "presidente") %>%
   group_by(id_municipio,
+           #nome_urna,
            #cargo,
   ) %>%
-  summarize(mais_votado = max(votos))
+      summarize(mais_votado = max(votos),
+                )
+
+mg_result_nome_join %>%
+  filter(cargo== "presidente") %>%
+  group_by(id_municipio,
+           # cargo,
+          ) %>%
+slice(which.max(votos))
+
+exemplo<- mg_result_nome_join %>%
+ filter( str_detect(nome_urna, "Bolsonaro|Lula|Ciro|Simone" ))%>%
+  select(id_municipio, cargo ,votos, nome_urna) # %>% view()
+  
+
+exemplo %>%
+  group_by(id_municipio,
+           nome_urna,
+           #cargo,
+         ) %>%
+          summarize(mais_votado = max(votos))
 
 # ERRO: pq quando você agrupa por tudo ele summariza nada kkk
 
@@ -96,7 +127,7 @@ mg_result_pres_wide<- mg_result_nome_join %>%
   #pq o pivot wider estava dando erro
   select(!c(numero_partido, sigla_partido,  numero_partido,
             numero_candidato, sequencial_candidato, id_candidato_bd,
-            sequencial, resultado)
+             resultado)
          ) %>%
   # Pivotando para juntar com o mapa do {geobr}
   tidyr::pivot_wider(names_from = nome_urna,
@@ -116,7 +147,7 @@ mg_result_gov_wide<- mg_result_nome_join %>%
   #pq o pivot wider estava dando erro
   select(!c(numero_partido, sigla_partido,  numero_partido,
             numero_candidato, sequencial_candidato, id_candidato_bd,
-            sequencial, resultado)
+            resultado)
   ) %>%
   # Pivotando para juntar com o mapa do {geobr}
   pivot_wider(names_from = nome_urna,
@@ -129,6 +160,7 @@ mg_result_gov_wide<- mg_result_nome_join %>%
   dplyr::relocate(.after = cargo, mais_votado, zema, kalil)
 
 
+mg_result_pres_wide
 
 # Tentando fazer os dois juntos
 
@@ -202,6 +234,34 @@ ggplot() +
        )
   
 
+# Detalhes
+mg_result_detal <- full_join(x= mg_result_pres_wide %>%
+                               select(mais_votado, lula, jair_bolsonaro,
+                                      id_municipio),
+                             y = mg_detalhes_pres_data %>%
+                               select(id_municipio, c(aptos_totalizadas:votos_nulos))
+                             #,by =  "id_municipio"
+                             ) %>%
+  mutate(prop_lula_vl=lula/votos_validos)
+
+mapa_vot_presid_det <-  full_join( x = mapa_munic_mg %>%
+                                 mutate(id_municipio= as.character(code_muni)),
+                               y =  mg_result_detal
+                               #,by =  "id_municipio"
+                               ) 
+mapa_vot_presid_det %>%
+  ggplot() +
+  geom_sf( aes( fill= prop_lula_vl) ,size= .20,
+           color= "grey20", show.legend = TRUE) +
+  theme_void() +
+  scale_fill_brewer( name= "Candidato",
+                     #label= c("Menos de 20%", "20% a 40%"),
+                     values= c("dodgerblue3","firebrick1")) +
+  labs(title = "Eleições 2022: Presidente mais Votados por Município em MG", 
+       #caption = "Fonte"
+  )
+
+
 
 # Governador mais votado --------------------------------------------------
 
@@ -254,26 +314,32 @@ mg_result_exec_mais_vot<- full_join( mg_result_pres_wide %>%
   relocate(id_municipio,
            dois_mais)
 
-mapa_vot_gov <-  full_join( x = mapa_munic_mg %>%
+shp_df_vot_gov <-  full_join( x = mapa_munic_mg %>%
                               mutate(id_municipio= as.character(code_muni)),
                             y = mg_result_exec_mais_vot
                             ,by =  "id_municipio")
 
-mapa_vot_gov %>%
-  ggplot() +
-  geom_sf( aes( fill= dois_mais) ,
-           size= .15, color= "gray20", show.legend = TRUE) +
-  theme_void() +
-  scale_fill_manual( name= "Candidato",
-                     #label= c("Menos de 20%", "20% a 40%"),
-                     values= c("#003A88","red2", "brown1")
-                     ) +
-  labs(title = "Eleições 2022: Pres. e Gov. mais Votados",
-        subtitle = "Votos por Município em MG")
+
+plot_vot_gov <- shp_df_vot_gov%>%
+              ggplot() +
+              geom_sf( aes( fill= dois_mais) ,
+                       size= .40, color= "grey20", show.legend = TRUE) +
+              theme_void() +
+              scale_fill_manual( name= "Candidato",
+                                 #label= c("Menos de 20%", "20% a 40%"),
+                                 values= c("#2A628F", "#C81D25","#FF5A5F")
+                                 ) #+
+              #labs(title = "Eleições 2022: Pres. e Gov. mais Votados",
+               #     subtitle = "Votos por Município em MG")
+
+ggsave("mapas/exports/votos_por_municp.png",
+       plot_vot_gov,
+       dev = "png", dpi = 300, bg = "white",
+       width = 1080, height = 1080, units = "px")
 
 
-
-as_tibble(mapa_vot_gov)%>%
+# Rode Isso para ver o Errp
+as_tibble(shp_df_vot_gov) %>%
   count(dois_mais, sort = TRUE)
 
 
@@ -336,7 +402,7 @@ mapa_vot_gov_zm <-  left_join( x = mapa_regioes_mg %>%
                             ,by =  "id_municipio")
 
 
-
+saveRDS(mapa_vot_gov_zm, "scrapper/data_raw/mapa_vot_gov_zm.rds")
 
 mapa_vot_gov_zm %>%
   ggplot() + geom_sf(aes( fill= dois_mais),
