@@ -265,9 +265,17 @@ shp_bairros_pjf <- sf::read_sf("data/shp_bairros_pjf.gpkg")
 
 `ggplot`:
 ```{r ggplot-bairros, eval=TRUE}
-shp_bairros_pjf %>% 
-  ggplot() +
-  geom_sf(aes(fill = rend_pc)) +
+ggplot() +
+  geom_sf(data = shp_jf) +
+  geom_sf(data = shp_bairros_pjf, aes(fill = rend_pc)) +
+  scale_fill_viridis_b() +
+  labs(title = "Bairros de Juiz de Fora",
+       caption = "Fonte: PJF",
+       fill = "Renda per capita \n(em salários mínimos)") +
+  theme_void()
+
+ggplot() +
+  geom_sf(data = shp_bairros_pjf, aes(fill = rend_pc)) +
   scale_fill_viridis_b() +
   labs(title = "Bairros de Juiz de Fora",
        caption = "Fonte: PJF",
@@ -339,10 +347,10 @@ Fazemos isso por meio de operações topológicas do pacote `sf`. Existem difere
 No entanto, pode haver problemas se uma seção estiver **exatamente** no limite entre dois polígonos, nem um milímetro a mais dentro de outro. Parece trivial, mas ocorre com alguma frequência: por exemplo, se o limite de bairros é uma avenida. Assim, é bom ver se isso está acontecendo fazendo a operação com o shapefile de seções antes de fazê-lo com o de votos:
 ```{r secoes-operation, eval=TRUE}
 shp_secoes_bairros <- shp_tse_secoes %>% 
-  st_join(shp_bairros_pjf, join = st_covered_by)
+  st_join(shp_bairros_pjf %>% select(name_neighborhood, geom), join = st_covered_by)
 
 shp_secoes_bairros %>% 
-  filter(is.na(code_neighborhood))
+  filter(is.na(name_neighborhood))
 ```
 
 Após o join espacial, 34 seções ficaram repletas de NA para os dados provenientes do shapefile de bairros. Podemos averiguar onde elas estão destacando, em cima do mapa anterior, quais colégios eleitorais foram perdidos.
@@ -353,7 +361,7 @@ shp_bairros_pjf %>%
   tm_borders(col = "black") +
   #tm_shape(shp_tse_secoes) +
   #tm_dots(col = "red") +
-  tm_shape(shp_secoes_bairros %>% filter(is.na(code_neighborhood))) +
+  tm_shape(shp_secoes_bairros %>% filter(is.na(name_neighborhood))) +
   tm_dots(col = "blue")
 ```
 
@@ -364,12 +372,75 @@ São exatamente os nove colégios eleitorais rurais. Assim, podemos prosseguir c
 Nota: `st_covered_by` é o inverso da operação que usamos aqui, `st_covers`: vai depender de quem é o $x$ e quem é o $y$ do join. No caso, como passamos primeiro o shapefile de bairros (para selecionar só algumas colunas), usamos a forma direta, *x covers y*, em vez da inversa.
 ```{r}
 shp_presidente_valid_tally_bairros <- shp_bairros_pjf %>% 
-  select(name_neighborhood, pop_20, rend_pc, prop_fam_perfil_cad) %>% 
-  st_join(shp_presidente_valid_tally, join = st_covers) %>% 
+  select(name_neighborhood, geom) %>% 
+  st_join(shp_presidente_valid_tally %>% filter(!is.na(nm_votavel)), 
+          join = st_covers) %>% 
   relocate(geom, .after = n_prop)
 ```
 
+
+## Agregando por bairros
+
+Agora é só somar os votos das seções por bairro:
+
+```{r}
+# , pop_20, rend_pc, prop_fam_perfil_cad
+
+shp_presidente_valid_tally_bairros %>% 
+  filter(name_neighborhood == "ALTO DOS PASSOS" & nm_votavel == "JAIR MESSIAS BOLSONARO") %>% 
+  select(n) %>% 
+  st_drop_geometry() %>% 
+  sum()
+
+shp_presid_valid_bairros_sum <- shp_presidente_valid_tally_bairros %>% 
+  #na.omit() %>% 
+  group_by(name_neighborhood, nm_votavel) %>% 
+  summarise(votos = sum(n)) %>% 
+  mutate(votos_prop = votos / sum(votos))
+```
+
+
+
+
 # Visualizando as eleições
+
+```{r}
+shp_presid_valid_bairros_sum_wide <- shp_presid_valid_bairros_sum %>% 
+  select(-votos) %>% 
+  pivot_wider(names_from = "nm_votavel",
+              values_from = "votos_prop"
+              ) %>% 
+  janitor::clean_names() %>% 
+  relocate(geom, .after = `VERA LUCIA PEREIRA DA SILVA SALGADO`)
+
+# shp_pres_vld_tal_bair_wide <- shp_pres_vld_tal_bair_wide %>% 
+#   rename(lula = `luiz_inacio_lula_da_silva`, bolsonaro = `jair_messias_bolsonaro`, tebet = `simone_nassar_tebet`,
+#          ciro = `ciro_ferreira_gomes`, davila = `luiz_felipe_chaves_d_avila`, soraya = `soraya_vieira_thronicke`,
+#          sofia = `sofia_padua_manzano`, padre = `kelmon_luis_da_silva_souza`, pericles = `leonardo_pericles_vieira_roque`,
+#          vera = `vera_lucia_pereira_da_silva_salgado`, eymael = `JOSE MARIA EYMAEL`) 
+
+shp_presid_valid_bairros_sum_wide %>% 
+  select(c(name_neighborhood, luiz_inacio_lula_da_silva, jair_messias_bolsonaro, geom)) %>% 
+  mutate(vantagem_lula = luiz_inacio_lula_da_silva - jair_messias_bolsonaro) %>%
+  arrange(desc(vantagem_lula)) %>% 
+  st_as_sf() %>% 
+  ggplot() +
+  geom_sf(
+    aes(fill = vantagem_lula)
+  ) +
+  scale_fill_viridis_c(labels = scales::percent) +
+  theme_void()
+
+
+shp_presid_valid_bairros_sum_wide %>% 
+  select(c(name_neighborhood, luiz_inacio_lula_da_silva, jair_messias_bolsonaro, geom)) %>% 
+  mutate(vantagem_lula = luiz_inacio_lula_da_silva - jair_messias_bolsonaro) %>%
+  arrange(desc(vantagem_lula)) %>% 
+  st_as_sf() %>%
+  tm_shape() +
+  tm_fill(col = "vantagem_lula")
+```
+
 
 
 
