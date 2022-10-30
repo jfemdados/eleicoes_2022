@@ -428,7 +428,8 @@ shp_presid_valid_bairros_sum_wide %>%
   geom_sf(
     aes(fill = vantagem_lula)
   ) +
-  scale_fill_viridis_c(labels = scales::percent) +
+  scale_fill_distiller(palette = "RdBu", labels = scales::percent) +
+  #scale_fill_viridis_c(labels = scales::percent) +
   theme_void()
 
 
