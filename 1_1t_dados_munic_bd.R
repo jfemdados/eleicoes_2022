@@ -16,13 +16,12 @@ basedosdados::set_billing_id("eleicoes2022jf")
 ### Resultados Governadores e Presidente por Município 
 
 mg_result_exec_query <- basedosdados::bdplyr("br_tse_eleicoes.resultados_candidato_municipio") %>%
-                    dplyr::filter(ano == 2022 & sigla_uf == "MG"
+                    dplyr::filter(ano == 2022 & sigla_uf == "MG" & turno == 1 
                                   & str_detect(cargo,"presidente|governador")
                                   )
               
               
 mg_result_exec_data <- basedosdados::bd_collect(mg_result_exec_query)
-
 
 ### Detalhes dos Candidatos - Nomes
 mg_candidatos_query <- basedosdados::bdplyr("br_tse_eleicoes.candidatos") %>%
@@ -37,7 +36,7 @@ mg_candidatos_data <- basedosdados::bd_collect(mg_candidatos_query)
 # Detalhes dos Candidatos - Nomes
 
 mg_detalhes_pres_query <- basedosdados::bdplyr("br_tse_eleicoes.detalhes_votacao_municipio") %>%
-  dplyr::filter(ano == 2022 & sigla_uf == "MG" &  turno == 1
+  dplyr::filter(ano == 2022 & sigla_uf == "MG"
                 & str_detect(cargo,"presidente")
                 ) 
 
@@ -66,7 +65,7 @@ mg_result_nome_join %>%
     count(nome_urna)
 
 
-#Dúvidas com summarize ---------------------
+#Dúvidas ---------------------
 # Group By com summarize  =( deu errado
 
 mg_result_nome_join %>%
@@ -95,9 +94,9 @@ mg_result_nome_join %>%
           ) %>%
 slice(which.max(votos))
 
-exemplo<- mg_result_nome_join %>%
- filter( str_detect(nome_urna, "Bolsonaro|Lula|Ciro|Simone" ))%>%
-  select(id_municipio, cargo ,votos, nome_urna) # %>% view()
+#exemplo<- mg_result_nome_join %>%
+# filter( str_detect(nome_urna, "Bolsonaro|Lula|Ciro|Simone" ))%>%
+#  select(id_municipio, cargo ,votos, nome_urna) # %>% view()
   
 
 exemplo %>%
@@ -338,7 +337,7 @@ ggsave("mapas/exports/votos_por_municp.png",
        width = 1080, height = 1080, units = "px")
 
 
-# Rode Isso para ver o Errp
+# Rode Isso para ver o Erro 
 as_tibble(shp_df_vot_gov) %>%
   count(dois_mais, sort = TRUE)
 
@@ -376,6 +375,11 @@ base_ibge_mg <-  base_ibge_raw %>%
 base_ibge_mg %>% 
   group_by( nome_da_rm ) %>%
     count(nome_da_meso)
+
+#Base com os Municípios do IBGE e de qual região pertencem
+#saveRDS(base_ibge_mg, "mapas/base_ibge_mg.rds")
+
+
         
 #Fazendo Polígonos pelo Geobr
 
@@ -383,8 +387,12 @@ library(ggplot2)
 library(geobr)
 
 
-mapa_regioes_mg <- mapa_munic_mg %>%
-        inner_join(base_ibge_mg, by= "code_muni")# %>% sf::st_simplify(dTolerance = 0.)
+
+base_ibge_mg <- readRDS("mapas/base_ibge_mg.rds")
+
+mapa_regioes_mg <- inner_join( mapa_munic_mg, # ShapeFile dos Municipios de MG
+                                base_ibge_mg, # Divisão/Classificação dos Municípios em Regiões
+                               by= "code_muni")# %>% sf::st_simplify(dTolerance = 0.)
 
 mapa_regioes_mg %>%
   #filter(nome_da_meso== "Zona da Mata") %>%
@@ -396,13 +404,13 @@ mapa_regioes_mg %>%
 
 
 mapa_vot_gov_zm <-  left_join( x = mapa_regioes_mg %>%
-                                 filter(nome_da_meso== "Zona da Mata") %>%
-                              mutate(id_municipio= as.character(code_muni)),
+                                 filter(nome_da_meso == "Zona da Mata") %>%
+                              mutate(id_municipio = as.character(code_muni)),
                             y = mg_result_exec_mais_vot
                             ,by =  "id_municipio")
 
 
-saveRDS(mapa_vot_gov_zm, "scrapper/data_raw/mapa_vot_gov_zm.rds")
+
 
 mapa_vot_gov_zm %>%
   ggplot() + geom_sf(aes( fill= dois_mais),
@@ -433,3 +441,13 @@ as_tibble(mapa_vot_gov_zm) %>%
 
 as_tibble(mapa_vot_gov_zm) %>%
   count(dois_mais, sort = TRUE)
+
+# Mapas de Regiões juntando municípios    -----------
+
+
+mapa_vot_gov_meso <-  left_join( x = mapa_regioes_mg %>%
+                                 filter(nome_da_meso == "Zona da Mata") %>%
+                                 mutate(id_municipio = as.character(code_muni)),
+                               y = mg_result_exec_mais_vot
+                               ,by =  "id_municipio")
+
