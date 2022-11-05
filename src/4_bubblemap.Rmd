@@ -181,16 +181,5 @@ mapa <- ggplot() +
     )
 ```
 
-# Evolução
-
-* Feito
-  - Bubble map presidencial MG - 1T 
-  - Base e storytelling para o post nas redes
-* Fazendo
-  - Prestar atenção em qual medida de % vai ser usada pra colorir 
-  - Base da votação MG - 2T
-* A fazer
-  - Inserir bounding box (`bbox`) no mapa para já fazer um recorte de MG - não é difícil, só não deu tempo
-  - Bubble map presidencial MG - 2T (só jogar o código)
 
 
