@@ -1,0 +1,196 @@
+---
+title: "Eleições 2022 - Bubble Map de Minas Gerais"
+author: "Marcello Filgueiras e Arthur Bazolli"
+date: "2022-10-28"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+# Setup 
+
+```{r setup}
+# geral
+library(tidyverse)
+library(here)
+
+# espacial
+library(sf)
+library(geobr)
+
+# dataviz
+library(showtext)
+font_add_google("Prata", regular.wt = 400)
+showtext_auto()
+```
+
+
+
+# Preparação dos dados
+
+Partimos de um dataframe espacial (`sf`) de votos na forma longa: cada coluna é um candidato (e outras infos) e cada linha é um município. Exemplo (valores fictícios):
+
+name_muni   |votos_tot|cand_A|cand_B   |nulo_branco|geometry
+:-----------|:-------:|:----:|:-------:|:---------:|:---------------:
+Juiz de Fora|200000   |100000|80000    |20000      |MULTIPOLYGON(...)
+Viçosa      |60000    |35000 |15000    |10000      |MULTIPOLYGON(...)
+Muriaé      |75000    |24000 |48000    |3000       |MULTIPOLYGON(...)
+
+A partir dele, computamos a diferença de votos e a proporção. 
+```{r votos-dif}
+mapa_vot_presid_det <- mapa_vot_presid_det %>% 
+  mutate(
+    lula_dif = lula - jair_bolsonaro, 
+    lula_p = (lula - jair_bolsonaro)/votos_validos
+    )
+```
+
+Outro passo importante é categorizar esses valores, para usar escalas discretas no mapa. Nota: os `breaks` foram definidos por experimentação, de forma que pegassem mais contraste no mapa. No caso do primeiro turno, tivemos que ficar com o break de 40% para o percentual da diferença de votos.
+
+```{r votos-brk}
+breaks_pct <- c(-1, -0.4, 0, 0.4, 1)
+breaks <- c(-999999, -40000, -10000, -1000, -500, 0, 500, 1000, 10000, 40000, 999999)
+
+mapa_vot_presid_det <- mapa_vot_presid_det %>%
+  mutate(
+    lula_p_brk = cut(lula_p, 
+    breaks = breaks_pct,
+    labels = c("Bolsonaro (mais de 40%)", "Bolsonaro (menos de 40%)", "Lula (menos de 40%)", "Lula (mais de 40%)")
+    ), 
+    lula_brk = cut(lula_dif, 
+    breaks = breaks,
+    labels = c("Bolsonaro (mais de 40 mil)", "Bolsonaro (entre 10 e 40 mil)", "Bolsonaro (entre 1 e 10 mil)", "Bolsonaro (entre 500 e mil)", "Bolsonaro (menos de 500)",
+               "Lula (menos de 500)", "Lula (entre 500 e mil)", "Lula (entre 1 e 10 mil)", "Lula (entre 10 e 40 mil)", "Lula (mais de 40 mil)"))
+    )
+```
+
+
+
+# Mapas!
+
+## Mapas-base
+
+Criar mapas do Brasil e de MG para servir de base (aesthetics apenas)
+```{r mapas-base}
+brasil <- geobr::read_state()
+
+mg <- geobr::read_state(code_state = "MG")
+
+mapa_br <- ggplot() +
+  geom_sf(
+    data = brasil,
+    fill = "#F2F2F2",
+    color = NA
+  ) +
+  geom_sf(
+    data = mg, 
+    fill = "grey90", 
+    color = NA 
+  ) +
+  theme_void()
+```
+
+## Estética
+
+Paletas, fonte e o que mais for importante entra aqui. Assim, fica fácil mudar
+```{r palette}
+# Paleta de 4 cores, créditos pro Igor
+pal_4 <- c("#E05353", "#ABD8F6", "#FFB1B7", "#9E0200")
+
+# Paletas de duas cores: opção com valores claros e escuros.
+#pal_2 <- c("#ABD8F6", "#FFB1B7")
+pal_2 <- c("#002968", "#9E0200")
+
+# Definindo a fonte aqui pra trocar tudo de uma vez.
+font <- "Prata"
+```
+
+## Enfim o bubblemap
+
+### Not so fast: considerações iniciais
+
+O bubblemap tem o seguinte princípio: no argumento de `aes()`, definimos `size` e `color`. Eles podem ser definidos com o mesmo valor, o que resulta numa única escala, ou com valores diferentes. Nesse caso, podemos transmitir duas informações, o que é conveniente para o nosso mapa: o tamanho da bolha representa a diferença de votos entre os candidatos, enquanto a cor representa a força daquele candidato. Assim, podemos com um único mapa entender duas coisas a respeito das cidades: (i) o seu peso na eleição, ou seja, a sua contribuição para eleger (ou não) um candidato; (ii) na escala local, o quão polarizada ela está. 
+
+Convém destacar a vantagem de usar a diferença de votos em vez do número de eleitores com um exemplo simples. Imagine que a cidade X tem 80 mil eleitores e o candidato A ganhou com 40 mil votos a mais que o seu opositor. Já a cidade Y tem 200 mil eleitores, mas a votação foi mais apertada e a margem do candidato A foi de 30 mil votos. É evidente que a cidade menor teve um peso maior para definir a eleição!
+
+### Perrengues espaciais
+
+Nosso objetivo é plotar as bolhas. Para isso, precisamos de pontos `geometry = POINT`; no entanto, temos polígonos, os shapefiles das cidades (`geometry = POLYGON` ou `MULTIPOLYGON`).
+
+A notícia boa: tem uma solução muito simples, é só passar um `st_centroid` no nosso `sf` que ele encontra o centróide do polígono e converte-o em um ponto. 
+
+A notícia ruim: nossa base tem uma falha, um dos municípios está com a `geometry` zoada por motivos alheios. Felizmente, foi possível contornar isso de maneira simples, apenas fazendo `st_make_valid()` para consertar a geometry.
+
+Por último, é de bom tom ordenar o `dataframe` em ordem decrescente da varíavel que coordena o tamanho da bolha. Assim, as bolhas grandes não tampam as pequenas, porque vêm primeiro.
+```{r bubblemap}
+mapa <- ggplot() +
+  # camada 1: mapa do Brasil
+  geom_sf(
+    data = brasil,
+    fill = "#F2F2F2",
+    color = NA
+  ) +
+  # camada 2: destaque para MG
+  geom_sf(
+    data = mg, 
+    fill = "grey90", 
+    color = NA
+  ) +
+  # camada 3: cidades
+  geom_sf(
+    data = mapa_vot_presid_det %>% st_make_valid() %>% st_centroid() %>% arrange(desc(abs(lula_dif))),
+    aes(size = abs(lula_dif), color = factor(lula_p_brk)),
+    alpha = 1,
+    shape = 16,
+    ) +
+  scale_size_continuous(name = "Diferença de votos", breaks = breaks) +
+  scale_color_manual(values = pal_4) +
+  theme_void() +
+  labs(
+    title = "Quem levou a votação em minas?",
+    subtitle = "Eleição para presidente - primeiro turno, 2022",
+    caption = "Fonte: TSE (2022)",
+    color = "Mais votado"
+  ) +
+  # estética adicional: fonte, cor e tamanho
+  theme(
+    plot.title = element_text(
+      family = font,
+      color = "grey30",
+      size = 17,
+      hjust = 0.5),
+    plot.subtitle = element_text(
+      family = font,
+      color = "grey30",
+      size = 10,
+      hjust = 0.5),
+    plot.caption = element_text(
+      family = font,
+      color = "grey30",
+      size = 10,
+      hjust = 0.5),
+    legend.text = element_text(
+      family = font,
+      color = "grey30"),
+    legend.title = element_text(
+      family = font,
+      color = "grey30"),
+    plot.margin = margin(r = 25)
+    )
+```
+
+# Evolução
+
+* Feito
+  - Bubble map presidencial MG - 1T 
+  - Base e storytelling para o post nas redes
+* Fazendo
+  - Prestar atenção em qual medida de % vai ser usada pra colorir 
+  - Base da votação MG - 2T
+* A fazer
+  - Inserir bounding box (`bbox`) no mapa para já fazer um recorte de MG - não é difícil, só não deu tempo
+  - Bubble map presidencial MG - 2T (só jogar o código)
+
+
